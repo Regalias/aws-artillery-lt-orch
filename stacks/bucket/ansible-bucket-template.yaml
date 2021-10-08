@@ -1,0 +1,19 @@
+resources:
+  ArtilleryAnsibleBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      Tags:
+        - Key: application
+          Value: artillery-orch
+
+outputs:
+  ArtilleryAnsibleBucketName:
+    Description: S3 bucket name containing ansible configs
+    Value: !Ref ArtilleryAnsibleBucket
+    Export:
+      Name: ArtilleryAnsibleBucketName
