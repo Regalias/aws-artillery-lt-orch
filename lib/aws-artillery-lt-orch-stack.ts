@@ -71,6 +71,7 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
 
       minCapacity: artilleryNodeCount.valueAsNumber,
       // desiredCapacity: artilleryNodeCount.valueAsNumber,
+      // Omit desired capacity to not override ASG managed scaling
       maxCapacity: 20,
 
       groupMetrics: [autoscaling.GroupMetrics.all()],
@@ -79,7 +80,9 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
       init: ec2.CloudFormationInit.fromElements(
         ec2.InitPackage.yum("docker"),
         ec2.InitService.enable("docker"),
+        ec2.InitCommand.argvCommand(["systemctl", "start", "docker"]),
         ec2.InitCommand.argvCommand(["docker", "pull", artilleryDockerImage.valueAsString]),
+        ec2.InitCommand.argvCommand(["usermod", "-aG", "docker", "ec2-user"]),
       ),
       signals: autoscaling.Signals.waitForAll({
         timeout: cdk.Duration.minutes(5)
@@ -94,6 +97,7 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
 
       minCapacity: 1,
       // desiredCapacity: 1,
+      // Omit desired capacity to not override ASG managed scaling
       maxCapacity: 1,
 
       instanceMonitoring: autoscaling.Monitoring.BASIC,
@@ -103,7 +107,7 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
         ec2.InitCommand.argvCommand(["python3", "-m", "pip", "install", "boto3", "botocore", "ansible"]),
         ec2.InitSource.fromAsset("/home/ec2-user/ansible", "ansible/"),
         ec2.InitCommand.argvCommand(["ansible-galaxy", "collection", "install", "amazon.aws"]),
-        ec2.InitCommand.argvCommand(["bash", "/home/ec2-user/ansible/generate_config.sh", cdk.Aws.REGION, tagName, tagValue, keypairName.valueAsString]),
+        ec2.InitCommand.argvCommand(["bash", "/home/ec2-user/ansible/bootstrap_ansible.sh", cdk.Aws.REGION, tagName, tagValue, keypairName.valueAsString]),
       ),
 
       signals: autoscaling.Signals.waitForAll({

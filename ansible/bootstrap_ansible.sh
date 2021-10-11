@@ -20,4 +20,7 @@ mkdir -p /home/ec2-user/.ssh/
 
 # Fetch keypair from SSM
 KEYPAIR_NAME=$4
-aws ssm get-parameter --name $KEYPAIR_NAME --with-decryption --query 'Parameter.Value' --output text > /home/ec2-user/.ssh/id_rsa
+KEY_PATH="/home/ec2-user/.ssh/id_rsa"
+aws ssm get-parameter --name $KEYPAIR_NAME --with-decryption --query 'Parameter.Value' --output text --region $AWS_REGION > $KEY_PATH
+chown ec2-user:ec2-user $KEY_PATH
+chmod 600 $KEY_PATH
