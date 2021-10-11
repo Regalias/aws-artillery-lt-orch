@@ -8,7 +8,8 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
     super(scope, id, props);
 
     // The code that defines your stack goes here
-
+    const tagName = "role";
+    const tagValue = "artilleryNode";
 
     // Stack parameters
     const instanceTypeParamString = new cdk.CfnParameter(this, "instanceType", {
@@ -23,7 +24,17 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
     const artilleryNodeCount = new cdk.CfnParameter(this, "artilleryNodeCount", {
       type: "Number",
       description: "Nubmer of artillery nodes",
-      default: "5"
+      default: "0",
+      maxValue: 20,
+      minValue: 0
+    });
+
+    // Vars
+    const artilleryDockerImage = new cdk.CfnParameter(this, "artilleryDockerImage", {
+      type: "String",
+      description: "Artillery Docker image to use",
+      // https://hub.docker.com/r/artilleryio/artillery
+      default: "artilleryio/artillery"
     });
 
     // const bucket = new s3.Bucket(this, "ArtilleryAnsibleBucket", {
@@ -66,12 +77,13 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
 
       minCapacity: 0,
       desiredCapacity: artilleryNodeCount.valueAsNumber,
+      maxCapacity: 20,
 
       groupMetrics: [autoscaling.GroupMetrics.all()],
       instanceMonitoring: autoscaling.Monitoring.BASIC
 
+      // No root key, use mssh
       // keyName: "",
-
     });
 
     const artilleryControlAsg = new autoscaling.AutoScalingGroup(this, "ArtilleryControlASG", {
@@ -81,8 +93,28 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
 
       minCapacity: 1,
       desiredCapacity: 1,
+      maxCapacity: 1,
 
-      instanceMonitoring: autoscaling.Monitoring.BASIC
+      instanceMonitoring: autoscaling.Monitoring.BASIC,
+
+      init: ec2.CloudFormationInit.fromElements(
+        ec2.InitPackage.python("ansible"),
+        ec2.InitPackage.python("boto3"),
+        ec2.InitPackage.python("botocore"),
+        ec2.InitSource.fromAsset("/home/ec2-user/ansible", "ansible/"),
+        ec2.InitCommand.argvCommand(["ansible-galaxy", "collection", "install", "amazon.aws"]),
+        ec2.InitCommand.argvCommand(["bash", "/home/ec2-user/ansible/generate_config.sh", cdk.Aws.REGION, tagName, tagValue]),
+
+        ec2.InitPackage.yum("docker"),
+        ec2.InitService.enable("docker"),
+        ec2.InitSource.fromAsset("/home/ec2-user/artillery", "artillery/"),
+        ec2.InitCommand.argvCommand(["systemctl", "start", "docker"]),
+        ec2.InitCommand.argvCommand(["docker", "pull", artilleryDockerImage.valueAsString]),
+      ),
+
+      signals: autoscaling.Signals.waitForAll({
+        timeout: cdk.Duration.minutes(5)
+      })
 
       // keyName: "",
     });
@@ -100,10 +132,11 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
     artilleryNodeAsg.connections.allowFrom(artilleryControlAsg, ec2.Port.allTraffic());
 
     // Add tags on artillery nodes for ansible inventory discovery
-    const tagName = "role";
-    const tagValue = "artilleryNode";
-
     cdk.Tags.of(artilleryNodeAsg).add(tagName, tagValue, {applyToLaunchedInstances: true});
+
+    // Add control node data
+    // const controlUserdata = readFileSync("../../scripts/userdata/control.sh", 'utf-8')
+    // artilleryControlAsg.userData.addCommands("")
 
   }
 }

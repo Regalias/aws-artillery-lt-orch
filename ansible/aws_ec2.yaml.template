@@ -1,0 +1,7 @@
+plugin: aws_ec2
+regions:
+    - ${AWS_REGION}
+filters:
+    tag:${TAG_NAME}: "${TAG_VALUE}"
+compose:
+    ansible_host: private_ip_address
