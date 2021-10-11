@@ -37,20 +37,14 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
       default: "artilleryio/artillery"
     });
 
-    // const bucket = new s3.Bucket(this, "ArtilleryAnsibleBucket", {
-    //   blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-    // });
-
-    // const bucketOutput = new cdk.CfnOutput(this, "AnsibleBucketName", {
-    //   value: bucket.bucketName,
-    //   description: "S3 bucket name containing ansible configs",
-    //   exportName: "ArtilleryAnsibleBucketName"
-    // });
-
-    // Import bucket name from precreated stack
-    // const bucketName = cdk.Fn.importValue("ArtilleryAnsibleBucketName")
+    const keypairName = new cdk.CfnParameter(this, "keypairName", {
+      type: "String",
+      description: "SSH Keypair name from bootstrap",
+      default: "ansible-orch-key"
+    });
 
 
+    // Stack resources
     const vpc = new ec2.Vpc(this, "vpc", {
       cidr: "10.0.0.0/16",
       subnetConfiguration: [
@@ -75,8 +69,8 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
       allowAllOutbound: true,
       machineImage: amznLinux,
 
-      minCapacity: 0,
-      desiredCapacity: artilleryNodeCount.valueAsNumber,
+      minCapacity: artilleryNodeCount.valueAsNumber,
+      // desiredCapacity: artilleryNodeCount.valueAsNumber,
       maxCapacity: 20,
 
       groupMetrics: [autoscaling.GroupMetrics.all()],
@@ -89,10 +83,8 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
       ),
       signals: autoscaling.Signals.waitForAll({
         timeout: cdk.Duration.minutes(5)
-      })
-
-      // No root key, use mssh
-      // keyName: "",
+      }),
+      keyName: keypairName.valueAsString,
     });
 
     const artilleryControlAsg = new autoscaling.AutoScalingGroup(this, "ArtilleryControlASG", {
@@ -101,31 +93,37 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
       machineImage: amznLinux,
 
       minCapacity: 1,
-      desiredCapacity: 1,
+      // desiredCapacity: 1,
       maxCapacity: 1,
 
       instanceMonitoring: autoscaling.Monitoring.BASIC,
 
       init: ec2.CloudFormationInit.fromElements(
-        ec2.InitPackage.python("ansible"),
-        ec2.InitPackage.python("boto3"),
-        ec2.InitPackage.python("botocore"),
+        ec2.InitCommand.argvCommand(["python3", "-m", "pip", "install", "wheel"]),
+        ec2.InitCommand.argvCommand(["python3", "-m", "pip", "install", "boto3", "botocore", "ansible"]),
         ec2.InitSource.fromAsset("/home/ec2-user/ansible", "ansible/"),
         ec2.InitCommand.argvCommand(["ansible-galaxy", "collection", "install", "amazon.aws"]),
-        ec2.InitCommand.argvCommand(["bash", "/home/ec2-user/ansible/generate_config.sh", cdk.Aws.REGION, tagName, tagValue]),
+        ec2.InitCommand.argvCommand(["bash", "/home/ec2-user/ansible/generate_config.sh", cdk.Aws.REGION, tagName, tagValue, keypairName.valueAsString]),
       ),
 
       signals: autoscaling.Signals.waitForAll({
-        timeout: cdk.Duration.minutes(5)
+        timeout: cdk.Duration.minutes(7)
       })
 
+      // No root key here, use mssh
       // keyName: "",
     });
 
-    // Allow control node to describe ec2 instances for inventory
+    // Allow control node to describe ec2 instances for ansible inventory
     artilleryControlAsg.role.addToPrincipalPolicy(new iam.PolicyStatement({
       resources: ["*"],
       actions: ["ec2:describeInstances"],
+    }));
+
+    // Allow control node to fetch SSM secure param for SSH key
+    artilleryControlAsg.role.addToPrincipalPolicy(new iam.PolicyStatement({
+      resources: [`arn:${this.partition}:ssm:${this.region}:${this.account}:parameter/${keypairName.valueAsString}`],
+      actions: ["ssm:getParameter"],
     }));
 
     // Allow SSH to control node
@@ -136,10 +134,6 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
 
     // Add tags on artillery nodes for ansible inventory discovery
     cdk.Tags.of(artilleryNodeAsg).add(tagName, tagValue, {applyToLaunchedInstances: true});
-
-    // Add control node data
-    // const controlUserdata = readFileSync("../../scripts/userdata/control.sh", 'utf-8')
-    // artilleryControlAsg.userData.addCommands("")
 
   }
 }
