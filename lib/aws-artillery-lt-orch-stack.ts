@@ -80,7 +80,16 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
       maxCapacity: 20,
 
       groupMetrics: [autoscaling.GroupMetrics.all()],
-      instanceMonitoring: autoscaling.Monitoring.BASIC
+      instanceMonitoring: autoscaling.Monitoring.BASIC,
+
+      init: ec2.CloudFormationInit.fromElements(
+        ec2.InitPackage.yum("docker"),
+        ec2.InitService.enable("docker"),
+        ec2.InitCommand.argvCommand(["docker", "pull", artilleryDockerImage.valueAsString]),
+      ),
+      signals: autoscaling.Signals.waitForAll({
+        timeout: cdk.Duration.minutes(5)
+      })
 
       // No root key, use mssh
       // keyName: "",
@@ -104,12 +113,6 @@ export class AwsArtilleryLtOrchStack extends cdk.Stack {
         ec2.InitSource.fromAsset("/home/ec2-user/ansible", "ansible/"),
         ec2.InitCommand.argvCommand(["ansible-galaxy", "collection", "install", "amazon.aws"]),
         ec2.InitCommand.argvCommand(["bash", "/home/ec2-user/ansible/generate_config.sh", cdk.Aws.REGION, tagName, tagValue]),
-
-        ec2.InitPackage.yum("docker"),
-        ec2.InitService.enable("docker"),
-        ec2.InitSource.fromAsset("/home/ec2-user/artillery", "artillery/"),
-        ec2.InitCommand.argvCommand(["systemctl", "start", "docker"]),
-        ec2.InitCommand.argvCommand(["docker", "pull", artilleryDockerImage.valueAsString]),
       ),
 
       signals: autoscaling.Signals.waitForAll({
