@@ -7,7 +7,7 @@ def main() -> int:
 
     sess = boto3.session.Session()
 
-    print(f"Using keypair name '{KEYPAIR_NAME}', region '{sess.region_name}'")
+    print(f"Bootstrapping keypair name '{KEYPAIR_NAME}' in region '{sess.region_name}'")
     ec2 = sess.client("ec2")
     
     try:
